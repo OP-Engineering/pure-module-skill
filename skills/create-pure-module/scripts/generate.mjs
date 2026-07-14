@@ -297,6 +297,19 @@ async function main() {
         }
       }
     }
+    // create-react-native-library's "cpp" turbo-module type also adds a
+    // "codegen" entry to react-native-builder-bob.targets, which runs the
+    // RN codegen CLI at `bob build` time and commits its output into the
+    // package for publishing — the same fully codegen'd Cxx architecture
+    // this skill replaces with a hand-written JNI bridge. Without
+    // codegenConfig.outputDir.android (removed above) that target just
+    // throws, so drop it.
+    const bobConfig = currentPkg["react-native-builder-bob"];
+    if (Array.isArray(bobConfig?.targets)) {
+      bobConfig.targets = bobConfig.targets.filter(
+        (t) => t !== "codegen" && !(Array.isArray(t) && t[0] === "codegen")
+      );
+    }
     fs.writeFileSync(pkgPath, JSON.stringify(currentPkg, null, 2) + "\n", "utf8");
   }
 
