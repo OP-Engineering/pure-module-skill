@@ -1,7 +1,7 @@
 {
   "name": "create-pure-module",
   "version": "0.1.0",
-  "description": "Scaffold a React Native pure-C++ JSI module (op-sqlite architecture): a TurboModule install() entry point into hand-written JSI HostObjects.",
+  "description": "Fill an existing react-native-builder-bob turbo-module project with the pure-C++ JSI op-sqlite architecture: a TurboModule install() entry point into hand-written JSI HostObjects.",
   "type": "module",
   "bin": {
     "create-pure-module": "./skills/create-pure-module/scripts/generate.mjs"

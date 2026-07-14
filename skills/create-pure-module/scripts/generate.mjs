@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// Scaffolds a new "pure C++" React Native module (op-sqlite architecture:
-// TurboModule used only as an install() entry point into hand-written JSI).
+// Fills in the "pure C++" op-sqlite architecture (a TurboModule used only as
+// an install() entry point into hand-written JSI) inside an EXISTING
+// react-native-builder-bob / create-react-native-library turbo-module
+// project. This does not scaffold a new npm package — run
+// `npx create-react-native-library@latest <name> --type turbo-module
+// --languages kotlin-objc` first, then run this inside that directory.
 //
 // Usage:
-//   node generate.mjs --name react-native-acme-kit --prefix Acme \
-//     --package com.acme.kit --dir ../react-native-acme-kit \
-//     --description "Acme kit for React Native" --author "Jane Doe"
+//   node generate.mjs --prefix Acme --package com.acme.kit [--dir .]
 //
 // All flags can also be supplied interactively if omitted and stdin is a TTY.
 
@@ -16,6 +18,16 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, "..", "templates");
+
+// Files that belong to the surrounding create-react-native-library scaffold
+// (project metadata, not the native entry point) — left untouched.
+const SKIP_RELATIVE_PATHS = new Set([
+  "package.json.tmpl",
+  "README.md.tmpl",
+  ".gitignore.tmpl",
+  "tsconfig.json.tmpl",
+  "tsconfig.build.json.tmpl",
+]);
 
 function parseArgs(argv) {
   const args = {};
@@ -71,6 +83,13 @@ function kebabFromPackageName(name) {
     .toLowerCase();
 }
 
+function normalizeAuthor(author) {
+  if (!author) return "";
+  if (typeof author === "string") return author;
+  const parts = [author.name, author.email && `<${author.email}>`, author.url && `(${author.url})`];
+  return parts.filter(Boolean).join(" ");
+}
+
 function walk(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -84,11 +103,6 @@ function walk(dir) {
   return out;
 }
 
-function isDirEmpty(dir) {
-  if (!fs.existsSync(dir)) return true;
-  return fs.readdirSync(dir).length === 0;
-}
-
 function replaceTokens(content, tokens) {
   let result = content;
   for (const [token, value] of Object.entries(tokens)) {
@@ -97,21 +111,86 @@ function replaceTokens(content, tokens) {
   return result;
 }
 
+// Detects a react-native-builder-bob / create-react-native-library
+// turbo-module project: the only kind of project this skill knows how to
+// operate on.
+function detectBuilderBobProject(dir) {
+  const pkgPath = path.join(dir, "package.json");
+  if (!fs.existsSync(pkgPath)) return null;
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  } catch {
+    return null;
+  }
+  const isBobProject = Boolean(pkg["react-native-builder-bob"] || pkg["create-react-native-library"]);
+  return isBobProject ? pkg : null;
+}
+
+// Removes leftover files from the library's default example TurboModule
+// (e.g. create-react-native-library's "Multiply" boilerplate) that this
+// skill's entry point supersedes but doesn't share a filename with.
+function cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath }) {
+  const removed = [];
+
+  const removeIfNotIn = (dir, keepNames) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || keepNames.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      fs.rmSync(full);
+      removed.push(path.relative(outDir, full));
+    }
+  };
+
+  removeIfNotIn(path.join(outDir, "src"), new Set([`Native${prefix}.ts`, "index.ts"]));
+  removeIfNotIn(path.join(outDir, "ios"), new Set([`${prefix}.h`, `${prefix}.mm`]));
+
+  const kotlinKeep = new Set([`${prefix}Bridge.kt`, `${prefix}Module.kt`, `${prefix}Package.kt`]);
+  removeIfNotIn(path.join(outDir, "android", "src", "main", "java", javaPackagePath), kotlinKeep);
+
+  if (oldJavaPackagePath && oldJavaPackagePath !== javaPackagePath) {
+    const oldDir = path.join(outDir, "android", "src", "main", "java", oldJavaPackagePath);
+    removeIfNotIn(oldDir, new Set());
+    // Prune now-empty package directories left behind by the old path, up to
+    // (but not including) android/src/main/java itself.
+    let dir = oldDir;
+    const stopAt = path.join(outDir, "android", "src", "main", "java");
+    while (dir !== stopAt && dir.startsWith(stopAt) && fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+      fs.rmdirSync(dir);
+      dir = path.dirname(dir);
+    }
+  }
+
+  return removed;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  const name = await ensure(args, "name", "npm package name (e.g. react-native-acme-kit): ");
+  const outDir = path.resolve(process.cwd(), args.dir || ".");
+
+  const pkg = detectBuilderBobProject(outDir);
+  if (!pkg && !args.force) {
+    throw new Error(
+      `"${outDir}" doesn't look like a react-native-builder-bob / create-react-native-library project ` +
+        `(no package.json, or missing a "react-native-builder-bob"/"create-react-native-library" key).\n\n` +
+        `This skill fills in the pure-C++ JSI entry point inside an EXISTING turbo-module library scaffold — it ` +
+        `doesn't create a new npm package from scratch. First run:\n\n` +
+        `  npx create-react-native-library@latest <name> --type turbo-module --languages kotlin-objc\n\n` +
+        `then re-run this generator from inside that directory (pass --force to bypass this check).`
+    );
+  }
+
+  const name = pkg?.name ?? path.basename(outDir);
+  const kebabName = kebabFromPackageName(name);
+  const description = pkg?.description ?? "";
+  const author = normalizeAuthor(pkg?.author);
+  const oldJavaPackage = pkg?.codegenConfig?.android?.javaPackageName;
+
   const prefixRaw = await ensure(args, "prefix", "Short PascalCase prefix (e.g. Acme): ");
-  const javaPackage = await ensure(
-    args,
-    "package",
-    "Java package (e.g. com.acme.kit): ",
-    `com.${kebabFromPackageName(name).replace(/-/g, "")}`
-  );
-  const defaultDir = `./${kebabFromPackageName(name)}`;
-  const outDir = path.resolve(process.cwd(), await ensure(args, "dir", `Output directory [${defaultDir}]: `, defaultDir));
-  const description = await ensure(args, "description", "Description: ", `${name} React Native module`);
-  const author = await ensure(args, "author", "Author: ", "");
+  const defaultJavaPackage = oldJavaPackage || `com.${kebabName.replace(/-/g, "")}`;
+  const javaPackage = await ensure(args, "package", `Java package [${defaultJavaPackage}]: `, defaultJavaPackage);
 
   if (!/^[A-Za-z][A-Za-z0-9]{2,}$/.test(prefixRaw)) {
     throw new Error(`Prefix "${prefixRaw}" must be alphanumeric, start with a letter, and be at least 3 characters.`);
@@ -120,17 +199,9 @@ async function main() {
   const prefix = toPascalCase(prefixRaw); // e.g. Acme
   const prefixUpper = prefix.toUpperCase(); // ACME
   const prefixLower = prefix.toLowerCase(); // acme
-  const podName = prefix; // podspec/CMake package identifier
+  const podName = kebabName; // must match the pod/library identity create-react-native-library already created
   const javaPackagePath = javaPackage.split(".").join("/");
-
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true });
-  } else if (!isDirEmpty(outDir) && !args.force) {
-    throw new Error(
-      `Output directory "${outDir}" already exists and is not empty. ` +
-        `Pick a different --dir, or pass --force to write into it anyway.`
-    );
-  }
+  const oldJavaPackagePath = oldJavaPackage ? oldJavaPackage.split(".").join("/") : null;
 
   const tokens = {
     __PACKAGE_NAME__: name,
@@ -150,7 +221,10 @@ async function main() {
     __GLOBAL_PROXY__: `__${prefix}Proxy`,
   };
 
-  const templateFiles = walk(TEMPLATES_DIR);
+  const templateFiles = walk(TEMPLATES_DIR).filter((srcFile) => {
+    const relFromTemplates = path.relative(TEMPLATES_DIR, srcFile);
+    return !SKIP_RELATIVE_PATHS.has(relFromTemplates);
+  });
   const written = [];
 
   for (const srcFile of templateFiles) {
@@ -171,13 +245,34 @@ async function main() {
     written.push(path.relative(outDir, destFile));
   }
 
-  console.log(`\nScaffolded ${written.length} files into ${outDir}:\n`);
+  const removed = cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath });
+
+  const pkgPath = path.join(outDir, "package.json");
+  if (fs.existsSync(pkgPath)) {
+    const currentPkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    currentPkg.codegenConfig = {
+      name: currentPkg.codegenConfig?.name || `${prefix}Spec`,
+      type: "modules",
+      jsSrcsDir: currentPkg.codegenConfig?.jsSrcsDir || "src",
+      android: { javaPackageName: javaPackage },
+    };
+    fs.writeFileSync(pkgPath, JSON.stringify(currentPkg, null, 2) + "\n", "utf8");
+  }
+
+  console.log(`\nWrote ${written.length} files into ${outDir}:\n`);
   for (const f of written.sort()) {
     console.log(`  ${f}`);
   }
 
-  console.log(`\nPrefix: ${prefix}  |  Namespace: ${prefixLower}  |  Java package: ${javaPackage}`);
-  console.log(`Next: cd ${path.relative(process.cwd(), outDir) || "."} && yarn install`);
+  if (removed.length > 0) {
+    console.log(`\nRemoved ${removed.length} superseded file(s) from the default example module:\n`);
+    for (const f of removed.sort()) {
+      console.log(`  ${f}`);
+    }
+  }
+
+  console.log(`\nPrefix: ${prefix}  |  Namespace: ${prefixLower}  |  Java package: ${javaPackage}  |  Pod name: ${podName}`);
+  console.log(`Next: yarn install (if package.json's codegenConfig changed) && cd example && yarn pods (or equivalent) to rebuild.`);
 }
 
 main().catch((err) => {

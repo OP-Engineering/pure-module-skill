@@ -11,7 +11,12 @@ Pod::Spec.new do |s|
   s.authors      = package["author"]
 
   s.platforms    = { :ios => min_ios_version_supported, :tvos => "13.0", :osx => "10.15", :visionos => "1.0" }
-  s.source       = { :git => package["repository"]["url"], :tag => "#{s.version}" }
+
+  # create-react-native-library doesn't always populate "repository" in
+  # package.json (e.g. before the user has set up a remote) — fall back to
+  # "." so pod install against the local path still works.
+  repository_url = package["repository"].is_a?(Hash) ? package["repository"]["url"] : "."
+  s.source       = { :git => repository_url, :tag => "#{s.version}" }
 
   install_modules_dependencies(s)
 

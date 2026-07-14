@@ -1,16 +1,26 @@
 # create-pure-module
 
-Scaffolds a new React Native native module that follows the **op-sqlite
-architecture**: a TurboModule used only as a thin, blocking-synchronous
-`install()` entry point that hands the JSI `Runtime` and `CallInvoker` to
-hand-written C++. The actual API surface is plain JSI — `HostObject`s and
-`HostFunction`s — not codegen'd TurboModule methods. This avoids the
-serialization overhead and per-method codegen boilerplate of a normal
-TurboModule, at the cost of writing the JSI glue by hand.
+Fills in an **existing** `react-native-builder-bob` / `create-react-native-library`
+turbo-module project with the **op-sqlite architecture**: a TurboModule used
+only as a thin, blocking-synchronous `install()` entry point that hands the
+JSI `Runtime` and `CallInvoker` to hand-written C++. The actual API surface is
+plain JSI — `HostObject`s and `HostFunction`s — not codegen'd TurboModule
+methods. This avoids the serialization overhead and per-method codegen
+boilerplate of a normal TurboModule, at the cost of writing the JSI glue by
+hand.
 
-This is a scaffolding tool for **pure C++ modules only** — no Swift/Kotlin
-API surface, no Nitro/Expo module conventions. If you want a "normal"
-TurboModule or Nitro module, this isn't the tool for that.
+This tool does **not** scaffold a new npm package from scratch — it replaces
+the default example TurboModule inside a project that
+`create-react-native-library` already generated. Create that project first:
+
+```sh
+npx create-react-native-library@latest react-native-acme-kit \
+  --type turbo-module --languages kotlin-objc
+```
+
+This is a tool for **pure C++ modules only** — no Swift/Kotlin API surface,
+no Nitro/Expo module conventions. If you want a "normal" TurboModule or Nitro
+module, this isn't the tool for that.
 
 ## What you get
 
@@ -44,19 +54,26 @@ TurboModule or Nitro module, this isn't the tool for that.
 
 ## Usage
 
+Inside the `react-native-acme-kit` directory `create-react-native-library`
+just created:
+
 ```sh
 npx create-pure-module \
-  --name react-native-acme-kit \
   --prefix Acme \
-  --package com.acme.kit \
-  --dir ./react-native-acme-kit \
-  --description "Acme kit for React Native" \
-  --author "Jane Doe"
+  --package com.acme.kit
 ```
 
-Omit any flag and it'll prompt for it interactively (as long as stdin is a
-TTY). See `SKILL.md` for what each flag means and the full list of files it
-generates.
+`--dir` defaults to `.`; pass it to point at a different existing project.
+The command refuses to run (unless you pass `--force`) if the target
+directory doesn't have a `package.json` with a `react-native-builder-bob` or
+`create-react-native-library` key — that's the signal it uses to confirm
+there's an existing scaffold to fill in rather than an empty directory.
+
+Omit `--prefix`/`--package` and it'll prompt for them interactively (as long
+as stdin is a TTY); `--package` defaults to whatever
+`codegenConfig.android.javaPackageName` is already in the project's
+`package.json`. See `SKILL.md` for the full list of files it generates and
+removes.
 
 ### As a Claude Code skill
 
@@ -74,16 +91,15 @@ interactively via `/create-pure-module`. You can also drop the
 `skills/create-pure-module/` directory in by hand into `.claude/skills/`
 in a project (or a personal `~/.claude/skills/`).
 
-## After scaffolding
+## After running it
 
-The generated module has no bundled example app. To try it:
+`create-react-native-library` already bundled an `example/` app that depends
+on the library locally, so there's no separate test app to wire up:
 
-1. `cd` into the generated directory, `yarn install` (or `npm install`).
-2. Create a test app (`npx @react-native-community/cli init`) and add the
-   generated module as a local dependency (`npm link`, `yalc`, or a `file:`
-   dependency).
-3. iOS: `pod install` in the test app.
-4. Android: build normally — prefab headers are wired up already.
+1. `yarn install` at the project root (picks up the `codegenConfig` change).
+2. iOS: `cd example/ios && pod install` (or `yarn pods` from the root, if
+   `create-react-native-library` set that script up).
+3. Android: build normally — prefab headers are wired up already.
 
 Extend it by adding new `HostObject`s under `cpp/` (copy
 `ExampleHostObject` as a starting point) and registering them in

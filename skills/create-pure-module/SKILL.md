@@ -1,6 +1,6 @@
 ---
 name: create-pure-module
-description: Scaffold a new React Native "pure C++" native module — a TurboModule used only as a thin install() entry point that then hands off to hand-written JSI HostObjects in C++, instead of codegen'd TurboModule methods. Use when the user wants to create a new native module like op-sqlite (fast, no codegen boilerplate for the actual API surface), asks to "create a C++ RN module", "scaffold a JSI library", or references this skill by name.
+description: Fill in the "pure C++" op-sqlite architecture — a TurboModule used only as a thin install() entry point that hands off to hand-written JSI HostObjects in C++ — inside an EXISTING react-native-builder-bob / create-react-native-library turbo-module project. Use when the user wants to replace a freshly-scaffolded RN turbo-module library's default codegen boilerplate with a fast, hand-written JSI API surface like op-sqlite, asks to "create a C++ RN module", "scaffold a JSI library", or references this skill by name.
 user-invocable: true
 allowed-tools:
   - Read
@@ -13,7 +13,8 @@ allowed-tools:
 
 # create-pure-module
 
-Scaffolds a new React Native library that follows the **op-sqlite architecture**:
+Fills in a react-native-builder-bob / create-react-native-library turbo-module
+project with the **op-sqlite architecture**:
 
 - The only real TurboModule method is a blocking-synchronous `install()` that
   hands the JSI `Runtime` and `CallInvoker` to hand-written C++. Codegen is
@@ -31,63 +32,81 @@ Scaffolds a new React Native library that follows the **op-sqlite architecture**
   with a short prefix the user chooses, so the generated module can't collide
   with symbols from another native module in the same app.
 
-This is a scaffolding task, not a from-scratch design task — the actual work
-is running `scripts/generate.mjs` in this skill's directory with the right
-arguments and then walking the user through the follow-up steps it can't
-automate (pod install, first build).
+This skill does **not** scaffold a new npm package from scratch — it operates
+on a project that `create-react-native-library` already generated (which
+brings its own `package.json`, `example/` app, podspec, tsconfig, etc.). The
+actual work is running `scripts/generate.mjs` in this skill's directory
+against that project, then walking the user through the follow-up steps it
+can't automate (pod install, first build).
+
+## 0. Make sure there's a builder-bob project to work in
+
+Check the target directory's `package.json` for a `"react-native-builder-bob"`
+or `"create-react-native-library"` key (the generator does this check too and
+will refuse to run without one). If it's missing, tell the user to scaffold
+the library first:
+
+```
+npx create-react-native-library@latest <name> --type turbo-module --languages kotlin-objc
+```
+
+Then re-run this skill from inside that new directory. Don't try to invent a
+package.json/podspec/tsconfig yourself — that's exactly what
+`create-react-native-library` is for, and this skill's templates assume that
+scaffold already exists.
 
 ## 1. Collect inputs
 
-Ask the user for (skip anything they already gave you up front):
+Ask the user for (skip anything they already gave you up front, or can read
+from the existing `package.json`):
 
-1. **npm package name** — e.g. `react-native-acme-kit` or a scoped name like
-   `@acme/rn-kit`. This becomes the `name` in package.json.
-2. **Prefix** — a short PascalCase word, 3-6 letters, e.g. `Acme`. This is
+1. **Prefix** — a short PascalCase word, 3-6 letters, e.g. `Acme`. This is
    stamped onto every generated identifier: C++ namespace (lowercased),
    class/file names (`{Prefix}Module`, `{Prefix}ThreadPool`, `{Prefix}Bridge`
    ...), the JS global proxy (`__{Prefix}Proxy`), the Android log tag, and
    the internal HFN macro names. Reject single-letter or generic prefixes
    like `RN` — the whole point is collision-avoidance.
-3. **Java package** — reverse-domain, e.g. `com.acme.kit`. Used for the
-   Android Kotlin package and namespace.
-4. **Output directory** — where to write the module. Default to a new
-   directory next to the current project named after the npm package
-   (kebab-cased, scope stripped), e.g. `./react-native-acme-kit`. If the
-   user is already inside an empty directory meant for this module, offer to
-   scaffold in place (`.`).
-5. **Description** and **author** — one-liners, used in package.json and the
-   podspec. Fine to default to something short and ask the user to edit
-   later if they don't care.
+2. **Java package** — reverse-domain, e.g. `com.acme.kit`. Defaults to
+   whatever `codegenConfig.android.javaPackageName` is already set to in the
+   project's `package.json` (i.e. whatever the user picked when running
+   `create-react-native-library`) — only ask if that's missing.
 
-Don't ask about SQLite, encryption, multiple backends, or anything else
-op-sqlite-specific — this skill produces a minimal example module (an
-`Example` HostObject exposing one sync method and one async method) that the
-user extends themselves. Don't invent extra scope beyond that example.
+Don't ask about npm package name, output directory, description, or author —
+those already exist in the target project's `package.json` and are read
+directly from it. Don't ask about SQLite, encryption, multiple backends, or
+anything else op-sqlite-specific — this skill produces a minimal example
+module (an `Example` HostObject exposing one sync method and one async
+method) that the user extends themselves. Don't invent extra scope beyond
+that example.
 
 ## 2. Run the generator
 
-From this skill's directory:
+From this skill's directory, with the working directory (or `--dir`) pointed
+at the existing builder-bob project:
 
 ```
 node scripts/generate.mjs \
-  --name "<npm-package-name>" \
   --prefix "<Prefix>" \
   --package "<java.package.name>" \
-  --dir "<output-dir>" \
-  --description "<description>" \
-  --author "<author>"
+  --dir "<path-to-existing-project>"
 ```
 
-The script is idempotent-safe about *not* clobbering a non-empty output
-directory — if it refuses because the directory exists and has files, ask
-the user whether to pick a different directory or confirm overwrite, then
-re-run with `--force` only if they explicitly confirm.
+`--dir` defaults to `.`. The generator overwrites only the native entry-point
+files (`cpp/`, `ios/{Prefix}.h/.mm`, `android/build.gradle`,
+`android/CMakeLists.txt`, the Kotlin bridge/module/package files, the
+podspec, `src/Native{Prefix}.ts`, `src/index.ts`) and patches
+`package.json`'s `codegenConfig.android.javaPackageName` — it leaves the rest
+of the create-react-native-library scaffold (root `package.json` metadata,
+README, tsconfig, the `example/` app) alone. It also deletes the
+default example TurboModule's leftover files (e.g. create-react-native-library's
+"Multiply" boilerplate) once they're superseded, and prints what it removed.
 
-Run it, then `ls` the output directory and skim 2-3 generated files (e.g.
-`cpp/{Prefix}Module.cpp`, `android/build.gradle`, the podspec) to confirm the
-substitution actually ran cleanly — no leftover `__TOKEN__` placeholders.
-Grep for `__` followed by uppercase to catch any missed token quickly:
-`grep -rn '__[A-Z_]*__' <output-dir>` should return nothing.
+Run it, then `ls` a couple of the rewritten directories and skim 2-3
+generated files (e.g. `cpp/{Prefix}Module.cpp`, `android/build.gradle`, the
+podspec) to confirm the substitution actually ran cleanly — no leftover
+`__TOKEN__` placeholders. Grep for `__` followed by uppercase to catch any
+missed token quickly: `grep -rn '__[A-Z_]*__' <project-dir>` should return
+nothing outside of `node_modules`/`lib`/`example`.
 
 ## 3. Explain what was generated
 
@@ -123,23 +142,26 @@ Summarize for the user, briefly, mapping back to the architecture:
   `{Prefix}Package.kt` — the JNI/fbjni path that does the Android equivalent.
 - `android/build.gradle`, `android/CMakeLists.txt`, the podspec — the build
   wiring; no backend-switching logic like op-sqlite has, just a plain CMake
-  + prefab / CocoaPods setup compiling everything under `cpp/`.
+  + prefab / CocoaPods setup compiling everything under `cpp/`. The podspec
+  and CMake `PACKAGE_NAME` keep the pod/library identity
+  `create-react-native-library` already created (the kebab-case npm package
+  name) — only the C++/Kotlin symbols inside get the chosen prefix.
 - `src/Native{Prefix}.ts` — the minimal codegen spec, just `install()`.
 - `src/index.ts` — calls `install()` once, reads `global.__{Prefix}Proxy`,
   and re-exports a typed wrapper.
 
 ## 4. Follow-up steps to tell the user (don't do these yourself unless asked)
 
-- `package.json`'s `repository`/`homepage`/`bugs` URLs are placeholders
-  (`github.com/CHANGEME/...`) — the podspec reads `repository.url` at pod
-  install time, so point these at the real repo before publishing.
-- `yarn install` / `npm install` inside the new module directory.
-- Wiring it into a test app: either `npm link` / `yalc`, or generate a
-  fresh example app with `npx @react-native-community/cli init` and add the
-  module as a local dependency — this skill doesn't scaffold an example app.
-- iOS: `cd example/ios && pod install` once linked into an app.
-- Android: nothing extra needed beyond a normal `./gradlew` build — prefab
-  headers are wired up in the generated `build.gradle`.
+- If `package.json`'s `repository`/`homepage`/`bugs` URLs are still
+  placeholders from `create-react-native-library`, the podspec reads
+  `repository.url` at pod install time — point these at the real repo before
+  publishing.
+- `yarn install` (or `npm install`) at the project root to pick up the
+  `codegenConfig` change.
+- The project's bundled `example/` app already depends on the library locally
+  — rebuild it: `cd example && yarn pods` (iOS) then run it, or just
+  `yarn example ios` / `yarn example android` from the root, depending on
+  how `create-react-native-library` wired the example's scripts.
 - Extending the module: add new HostObjects under `cpp/`, register them on
   the proxy in `{Prefix}Module.cpp`'s `install()`, and expose typed
   wrappers from `src/index.ts`. No codegen changes needed for new methods —
