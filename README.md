@@ -60,10 +60,19 @@ generates.
 
 ### As a Claude Code skill
 
-This repo is also a Claude Code skill (`SKILL.md`). Drop this whole
-directory into `.claude/skills/create-pure-module/` in a project (or a
-personal `~/.claude/skills/`) and Claude can drive the scaffolding
-interactively via `/create-pure-module`.
+This repo is also a Claude Code skill
+(`skills/create-pure-module/SKILL.md`). Install it into a project with the
+[`skills` CLI](https://github.com/vercel-labs/skills):
+
+```sh
+npx skills add OP-Engineering/pure-module-skill
+```
+
+This copies `skills/create-pure-module/` into `.claude/skills/` (or the
+equivalent directory for your agent) and Claude can drive the scaffolding
+interactively via `/create-pure-module`. You can also drop the
+`skills/create-pure-module/` directory in by hand into `.claude/skills/`
+in a project (or a personal `~/.claude/skills/`).
 
 ## After scaffolding
 
