@@ -97,9 +97,19 @@ files (`cpp/`, `ios/{Prefix}.h/.mm`, `android/build.gradle`,
 podspec, `src/Native{Prefix}.ts`, `src/index.ts`) and patches
 `package.json`'s `codegenConfig.android.javaPackageName` — it leaves the rest
 of the create-react-native-library scaffold (root `package.json` metadata,
-README, tsconfig, the `example/` app) alone. It also deletes the
-default example TurboModule's leftover files (e.g. create-react-native-library's
-"Multiply" boilerplate) once they're superseded, and prints what it removed.
+README, tsconfig, the `example/` app) alone. It also deletes leftovers from
+whichever default example TurboModule create-react-native-library generated
+once they're superseded — e.g. the "kotlin-objc" type's default
+`{Name}Module.kt`/`{Name}.h/.mm`/`Native{Name}.ts`, or the "cpp" type's
+`cpp/{Name}Impl.h/.cpp` (a fully codegen'd Cxx spec — a different,
+incompatible architecture from this skill's hand-written JNI bridge) — and
+prints what it removed. If the project was scaffolded with
+`--languages cpp`, it also deletes the root `react-native.config.js` that
+type generates: it declares `cxxModuleCMakeListsPath`/`cxxModuleHeaderName`
+pointing at a build-generated `android/generated/jni` that only exists for
+that fully-codegen'd architecture, and leaving it in place makes RN's
+autolinking try to `add_subdirectory` a path that never gets created,
+breaking the Android CMake configure step.
 
 Run it, then `ls` a couple of the rewritten directories and skim 2-3
 generated files (e.g. `cpp/{Prefix}Module.cpp`, `android/build.gradle`, the
@@ -120,13 +130,16 @@ Summarize for the user, briefly, mapping back to the architecture:
   `computeAsync` (async, `promisify()` + the per-instance `ThreadPool`), and
   `labelItems` (sync, converts a JS array with `to_string_vec()` and returns
   an array of objects with `create_object_array()`).
-- `cpp/types.hpp` — the `JSVariant` variant type and `ArrayBuffer` struct
-  that every JSI <-> C++ conversion should be expressed in terms of.
-- `cpp/utils.{hpp,cpp}` — `to_jsi()`/`to_variant()` (and the
+- `cpp/{Prefix}Types.hpp` — the `JSVariant` variant type and `ArrayBuffer`
+  struct that every JSI <-> C++ conversion should be expressed in terms of.
+  Prefixed (not just `types.hpp`) so it can't collide with another
+  pure-C++ module's own `types.hpp` in the same app.
+- `cpp/{Prefix}Utils.{hpp,cpp}` — `to_jsi()`/`to_variant()` (and the
   `to_string_vec()`/`to_int_vec()`/`to_variant_vec()` array forms): the only
   functions that should ever convert between `jsi::Value` and C++ — don't
   hand-roll a conversion at a call site, add a `JSVariant` alternative and
-  teach it to these instead. Also `create_object_array()`, which builds an
+  teach it to these instead. Also prefixed for the same collision-avoidance
+  reason as `{Prefix}Types.hpp`. Also `create_object_array()`, which builds an
   array of same-shaped objects (e.g. query-result rows) by creating each
   column's `jsi::PropNameID` **once**, outside the row loop, and reusing it
   for every row's `setProperty()` call — recomputing a `PropNameID` per cell
@@ -166,8 +179,8 @@ Summarize for the user, briefly, mapping back to the architecture:
   the proxy in `{Prefix}Module.cpp`'s `install()`, and expose typed
   wrappers from `src/index.ts`. No codegen changes needed for new methods —
   that's the entire point of this architecture. Any new JSI <-> C++
-  conversion should go through `to_jsi()`/`to_variant()` in `utils.hpp`
-  (add a `JSVariant` alternative in `types.hpp` if the existing ones don't
+  conversion should go through `to_jsi()`/`to_variant()` in `{Prefix}Utils.hpp`
+  (add a `JSVariant` alternative in `{Prefix}Types.hpp` if the existing ones don't
   cover the shape needed), and any new HostFunction returning many
   same-shaped objects should use `create_object_array()` rather than calling
   `jsi::PropNameID::forUtf8()` inside the row loop.

@@ -19,16 +19,6 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, "..", "templates");
 
-// Files that belong to the surrounding create-react-native-library scaffold
-// (project metadata, not the native entry point) — left untouched.
-const SKIP_RELATIVE_PATHS = new Set([
-  "package.json.tmpl",
-  "README.md.tmpl",
-  ".gitignore.tmpl",
-  "tsconfig.json.tmpl",
-  "tsconfig.build.json.tmpl",
-]);
-
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
@@ -146,6 +136,25 @@ function cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath
   removeIfNotIn(path.join(outDir, "src"), new Set([`Native${prefix}.ts`, "index.ts"]));
   removeIfNotIn(path.join(outDir, "ios"), new Set([`${prefix}.h`, `${prefix}.mm`]));
 
+  // Covers leftovers from create-react-native-library's other native-code
+  // templates too (e.g. its "cpp" turbo-module type, which generates
+  // cpp/{Name}Impl.h/.cpp implementing a fully codegen'd Cxx spec — an
+  // architecture this skill replaces entirely).
+  const cppKeep = new Set([
+    `${prefix}Module.cpp`,
+    `${prefix}Module.hpp`,
+    `${prefix}ThreadPool.cpp`,
+    `${prefix}ThreadPool.hpp`,
+    "ExampleHostObject.cpp",
+    "ExampleHostObject.hpp",
+    "logs.h",
+    "macros.hpp",
+    `${prefix}Types.hpp`,
+    `${prefix}Utils.hpp`,
+    `${prefix}Utils.cpp`,
+  ]);
+  removeIfNotIn(path.join(outDir, "cpp"), cppKeep);
+
   const kotlinKeep = new Set([`${prefix}Bridge.kt`, `${prefix}Module.kt`, `${prefix}Package.kt`]);
   removeIfNotIn(path.join(outDir, "android", "src", "main", "java", javaPackagePath), kotlinKeep);
 
@@ -160,6 +169,18 @@ function cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath
       fs.rmdirSync(dir);
       dir = path.dirname(dir);
     }
+  }
+
+  // create-react-native-library's "cpp" turbo-module type writes a root
+  // react-native.config.js declaring cxxModuleCMakeListsPath/cxxModuleHeaderName
+  // (pointing at a build-generated android/generated/jni that only exists for
+  // the fully codegen'd Cxx architecture). Leaving it in place makes RN's
+  // autolinking try to add_subdirectory a path this skill's hand-written JNI
+  // bridge never produces, breaking the Android CMake configure step.
+  const staleConfigPath = path.join(outDir, "react-native.config.js");
+  if (fs.existsSync(staleConfigPath)) {
+    fs.rmSync(staleConfigPath);
+    removed.push(path.relative(outDir, staleConfigPath));
   }
 
   return removed;
@@ -221,10 +242,7 @@ async function main() {
     __GLOBAL_PROXY__: `__${prefix}Proxy`,
   };
 
-  const templateFiles = walk(TEMPLATES_DIR).filter((srcFile) => {
-    const relFromTemplates = path.relative(TEMPLATES_DIR, srcFile);
-    return !SKIP_RELATIVE_PATHS.has(relFromTemplates);
-  });
+  const templateFiles = walk(TEMPLATES_DIR);
   const written = [];
 
   for (const srcFile of templateFiles) {
@@ -251,10 +269,11 @@ async function main() {
   if (fs.existsSync(pkgPath)) {
     const currentPkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
     currentPkg.codegenConfig = {
+      ...currentPkg.codegenConfig,
       name: currentPkg.codegenConfig?.name || `${prefix}Spec`,
       type: "modules",
       jsSrcsDir: currentPkg.codegenConfig?.jsSrcsDir || "src",
-      android: { javaPackageName: javaPackage },
+      android: { ...currentPkg.codegenConfig?.android, javaPackageName: javaPackage },
     };
     fs.writeFileSync(pkgPath, JSON.stringify(currentPkg, null, 2) + "\n", "utf8");
   }

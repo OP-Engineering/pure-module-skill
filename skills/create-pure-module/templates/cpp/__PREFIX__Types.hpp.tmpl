@@ -16,7 +16,7 @@ struct ArrayBuffer {
 
 // Every JS-representable value that crosses the JSI boundary in this module
 // should be expressed as a JSVariant and converted with to_jsi()/to_variant()
-// in utils.hpp — see the comment there for why. Add a new alternative here
+// in __PREFIX__Utils.hpp — see the comment there for why. Add a new alternative here
 // (and a matching branch in to_jsi/to_variant) before reaching for a
 // hand-rolled jsi::Value conversion somewhere else in the codebase.
 using JSVariant = std::variant<std::nullptr_t, bool, int, long long, double,

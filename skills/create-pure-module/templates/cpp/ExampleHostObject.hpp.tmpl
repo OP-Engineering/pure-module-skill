@@ -19,7 +19,7 @@ namespace jsi = facebook::jsi;
 //    object's own ThreadPool and returns a Promise via promisify().
 //  - `labelItems`: a synchronous HostFunction that converts a JS array to
 //    C++ with to_string_vec(), builds JSVariant rows, and returns a JS array
-//    of objects via create_object_array() — the helpers in utils.hpp to use
+//    of objects via create_object_array() — the helpers in __PREFIX__Utils.hpp to use
 //    for JSI <-> C++ conversion instead of hand-rolled jsi::Value code, and
 //    the jsi::PropNameID-caching pattern to copy whenever you're setting the
 //    same property names on many objects.

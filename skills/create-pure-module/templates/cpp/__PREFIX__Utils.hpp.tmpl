@@ -1,7 +1,7 @@
 #pragma once
 
 #include "__PREFIX__ThreadPool.hpp"
-#include "types.hpp"
+#include "__PREFIX__Types.hpp"
 #include <any>
 #include <functional>
 #include <jsi/jsi.h>
@@ -17,7 +17,7 @@ namespace jsi = facebook::jsi;
 //
 // Use these for every JSI <-> C++ conversion instead of hand-rolling
 // jsi::Value reads/writes at each call site. Centralizing the conversion
-// means a new JSVariant alternative (see types.hpp) only needs to be taught
+// means a new JSVariant alternative (see __PREFIX__Types.hpp) only needs to be taught
 // to these two functions once, instead of at every HostFunction that touches
 // it.
 

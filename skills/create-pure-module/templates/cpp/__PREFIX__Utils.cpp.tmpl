@@ -1,4 +1,4 @@
-#include "utils.hpp"
+#include "__PREFIX__Utils.hpp"
 #include "__PREFIX__Module.hpp"
 #include "macros.hpp"
 #include <cstring>
@@ -88,7 +88,7 @@ JSVariant to_variant(jsi::Runtime &rt, const jsi::Value &value) {
       throw std::runtime_error(
           "[__PREFIX_LOWER__] object is not convertible to JSVariant: only "
           "primitives, strings and ArrayBuffers/ArrayBuffer views are "
-          "supported. Add a JSVariant alternative (types.hpp) and a branch "
+          "supported. Add a JSVariant alternative (__PREFIX__Types.hpp) and a branch "
           "here if you need to accept another shape.");
     }
 
@@ -153,7 +153,7 @@ create_object_array(jsi::Runtime &rt,
   }
 
   // Built once, outside the row loop — see the comment on this function in
-  // utils.hpp for why that matters.
+  // __PREFIX__Utils.hpp for why that matters.
   std::vector<jsi::PropNameID> column_prop_ids;
   column_prop_ids.reserve(column_count);
   for (const auto &column_name : column_names) {

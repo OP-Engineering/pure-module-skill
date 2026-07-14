@@ -1,7 +1,7 @@
 #include "ExampleHostObject.hpp"
 #include "logs.h"
 #include "macros.hpp"
-#include "utils.hpp"
+#include "__PREFIX__Utils.hpp"
 #include <chrono>
 #include <thread>
 
@@ -56,7 +56,7 @@ void ExampleHostObject::create_jsi_functions(jsi::Runtime &rt) {
 
   // Synchronous method returning an array of objects: the canonical case for
   // the to_string_vec()/JSVariant/create_object_array() helpers in
-  // utils.hpp. Real functionality (e.g. a query result) would build `rows`
+  // __PREFIX__Utils.hpp. Real functionality (e.g. a query result) would build `rows`
   // from whatever backing data this HostObject wraps instead of an index;
   // the shape — column names once, rows of JSVariant, create_object_array()
   // to assemble them — is the part to copy.

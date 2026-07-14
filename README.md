@@ -38,10 +38,12 @@ module, this isn't the tool for that.
   Android log tag — is stamped with a prefix you choose, so the generated
   module can't collide with another native module's symbols in the same
   app.
-- `to_jsi()`/`to_variant()` in `utils.hpp`: the single place every JSI <->
-  C++ conversion goes through, built on a `JSVariant` type you extend as
-  needed, instead of hand-rolled `jsi::Value` reads/writes scattered across
-  HostFunctions.
+- `to_jsi()`/`to_variant()` in `{Prefix}Utils.hpp`: the single place every JSI
+  <-> C++ conversion goes through, built on a `JSVariant` type (in
+  `{Prefix}Types.hpp`) you extend as needed, instead of hand-rolled
+  `jsi::Value` reads/writes scattered across HostFunctions. Prefixed so it
+  can't collide with another pure-C++ module's own `types.hpp`/`utils.hpp`
+  in the same app.
 - `create_object_array()`: builds an array of same-shaped objects (e.g.
   query-result rows) by creating each column's `jsi::PropNameID` once,
   outside the row loop, instead of re-interning the same property name once
