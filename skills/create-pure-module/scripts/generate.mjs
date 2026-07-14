@@ -275,6 +275,15 @@ async function main() {
       jsSrcsDir: currentPkg.codegenConfig?.jsSrcsDir || "src",
       android: { ...currentPkg.codegenConfig?.android, javaPackageName: javaPackage },
     };
+    // create-react-native-library's "cpp" turbo-module type sets these to
+    // point autolinking at a pre-generated android/generated (and
+    // ios/generated) tree for its fully codegen'd Cxx spec. This skill's
+    // hand-written JNI bridge needs the plain install() TurboModule spec
+    // instead, generated fresh by Gradle's normal codegen task — leaving
+    // these in place makes it look for generated code that was never
+    // produced, which is the CXX1429 "add_subdirectory" failure.
+    delete currentPkg.codegenConfig.outputDir;
+    delete currentPkg.codegenConfig.includesGeneratedCode;
     fs.writeFileSync(pkgPath, JSON.stringify(currentPkg, null, 2) + "\n", "utf8");
   }
 
