@@ -21,7 +21,7 @@ declare global {
   var __GLOBAL_PROXY__: __PREFIX__Proxy | undefined;
 }
 
-if (global.__GLOBAL_PROXY__ == null) {
+if (globalThis.__GLOBAL_PROXY__ == null) {
   if (NativeModules.__PREFIX__ == null) {
     throw new Error(
       '__PACKAGE_NAME__: base module not found. Did you run pod install / rebuild the Android app after installing?'
@@ -30,7 +30,7 @@ if (global.__GLOBAL_PROXY__ == null) {
 
   // Call the synchronous blocking install() function: this hands the JSI
   // Runtime + CallInvoker to cpp/__PREFIX__Module.cpp, which sets
-  // `global.__GLOBAL_PROXY__`.
+  // `globalThis.__GLOBAL_PROXY__`.
   const installed = Native__PREFIX__.install();
   if (!installed) {
     throw new Error(
@@ -38,14 +38,14 @@ if (global.__GLOBAL_PROXY__ == null) {
     );
   }
 
-  if (global.__GLOBAL_PROXY__ == null) {
+  if (globalThis.__GLOBAL_PROXY__ == null) {
     throw new Error(
-      '__PACKAGE_NAME__: install() reported success but global.__GLOBAL_PROXY__ was not set.'
+      '__PACKAGE_NAME__: install() reported success but globalThis.__GLOBAL_PROXY__ was not set.'
     );
   }
 }
 
-const proxy = global.__GLOBAL_PROXY__;
+const proxy = globalThis.__GLOBAL_PROXY__;
 
 export function createExample(): ExampleHandle {
   return proxy.createExample();

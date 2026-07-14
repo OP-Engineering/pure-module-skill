@@ -284,6 +284,19 @@ async function main() {
     // produced, which is the CXX1429 "add_subdirectory" failure.
     delete currentPkg.codegenConfig.outputDir;
     delete currentPkg.codegenConfig.includesGeneratedCode;
+    // create-react-native-library always scaffolds its exports map pointing
+    // at "./src/index.tsx" (its default entry point is a view component),
+    // but this skill's entry point is a plain "src/index.ts" — leaving the
+    // stale .tsx path in place makes Metro fall back to slower file-based
+    // resolution and warn about an invalid package.json on every bundle.
+    const exportsRoot = currentPkg.exports?.["."];
+    if (exportsRoot) {
+      for (const [key, value] of Object.entries(exportsRoot)) {
+        if (value === "./src/index.tsx") {
+          exportsRoot[key] = "./src/index.ts";
+        }
+      }
+    }
     fs.writeFileSync(pkgPath, JSON.stringify(currentPkg, null, 2) + "\n", "utf8");
   }
 
