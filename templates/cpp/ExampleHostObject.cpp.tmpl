@@ -1,0 +1,119 @@
+#include "ExampleHostObject.hpp"
+#include "logs.h"
+#include "macros.hpp"
+#include "utils.hpp"
+#include <chrono>
+#include <thread>
+
+namespace __NAMESPACE__ {
+
+ExampleHostObject::ExampleHostObject(jsi::Runtime &rt) {
+  thread_pool = std::make_shared<ThreadPool>();
+  create_jsi_functions(rt);
+}
+
+ExampleHostObject::~ExampleHostObject() { invalidate(); }
+
+void ExampleHostObject::create_jsi_functions(jsi::Runtime &rt) {
+  // Synchronous method: runs straight on the JS thread, no thread pool
+  // involved. Fine for cheap, non-blocking work.
+  function_map["add"] = __PREFIX_UPPER___HFN(this) {
+    if (count != 2 || !args[0].isNumber() || !args[1].isNumber()) {
+      throw std::runtime_error("[__PREFIX_LOWER__] add() expects two numbers");
+    }
+
+    double a = args[0].asNumber();
+    double b = args[1].asNumber();
+    return jsi::Value(a + b);
+  });
+
+  // Async method: the real work (here, a fake delay standing in for e.g. a
+  // blocking I/O or CPU-heavy call) runs on this object's ThreadPool.
+  // promisify() takes care of returning a jsi::Promise, hopping back onto
+  // the JS thread via the CallInvoker to resolve/reject it, and turning any
+  // thrown exception into a rejected JS Error.
+  function_map["computeAsync"] = __PREFIX_UPPER___HFN(this) {
+    if (count != 1 || !args[0].isNumber()) {
+      throw std::runtime_error(
+          "[__PREFIX_LOWER__] computeAsync() expects one number");
+    }
+
+    double value = args[0].asNumber();
+
+    return promisify(
+        rt, thread_pool,
+        [value]() -> std::any {
+          // Runs on the background thread: no jsi::Runtime access here.
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          return value * 2;
+        },
+        [](jsi::Runtime &rt, std::any result) -> jsi::Value {
+          // Runs back on the JS thread: safe to touch jsi::Runtime here.
+          double doubled = std::any_cast<double>(result);
+          return jsi::Value(doubled);
+        });
+  });
+
+  // Synchronous method returning an array of objects: the canonical case for
+  // the to_string_vec()/JSVariant/create_object_array() helpers in
+  // utils.hpp. Real functionality (e.g. a query result) would build `rows`
+  // from whatever backing data this HostObject wraps instead of an index;
+  // the shape — column names once, rows of JSVariant, create_object_array()
+  // to assemble them — is the part to copy.
+  function_map["labelItems"] = __PREFIX_UPPER___HFN(this) {
+    if (count != 1 || !args[0].isObject() ||
+        !args[0].asObject(rt).isArray(rt)) {
+      throw std::runtime_error(
+          "[__PREFIX_LOWER__] labelItems() expects an array of strings");
+    }
+
+    std::vector<std::string> labels = to_string_vec(rt, args[0]);
+
+    std::vector<std::string> column_names = {"id", "label"};
+    std::vector<std::vector<JSVariant>> rows;
+    rows.reserve(labels.size());
+    for (size_t i = 0; i < labels.size(); i++) {
+      rows.push_back({JSVariant(static_cast<int>(i)), JSVariant(labels[i])});
+    }
+
+    return create_object_array(rt, column_names, rows);
+  });
+}
+
+std::vector<jsi::PropNameID>
+ExampleHostObject::getPropertyNames(jsi::Runtime &rt) {
+  std::vector<jsi::PropNameID> keys;
+  keys.reserve(function_map.size());
+  for (const auto &pair : function_map) {
+    keys.emplace_back(jsi::PropNameID::forUtf8(rt, pair.first));
+  }
+  return keys;
+}
+
+jsi::Value ExampleHostObject::get(jsi::Runtime &rt,
+                                   const jsi::PropNameID &propNameID) {
+  auto name = propNameID.utf8(rt);
+  if (function_map.count(name) != 1) {
+    return jsi::Value::undefined();
+  }
+
+  return {rt, function_map[name]};
+}
+
+void ExampleHostObject::set(jsi::Runtime &rt, const jsi::PropNameID &name,
+                             const jsi::Value &value) {
+  throw std::runtime_error("[__PREFIX_LOWER__] ExampleHostObject is read-only");
+}
+
+void ExampleHostObject::invalidate() {
+  if (invalidated) {
+    return;
+  }
+
+  invalidated = true;
+  // Blocks until any in-flight background work finishes before this object
+  // (and its ThreadPool) gets torn down.
+  thread_pool->waitFinished();
+}
+
+} // namespace __NAMESPACE__

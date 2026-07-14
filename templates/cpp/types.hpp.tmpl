@@ -1,0 +1,25 @@
+#pragma once
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <variant>
+
+namespace __NAMESPACE__ {
+
+// A raw byte buffer, used to round-trip ArrayBuffer/TypedArray values
+// between JS and C++ without going through an intermediate JS string.
+struct ArrayBuffer {
+  std::shared_ptr<uint8_t[]> data;
+  size_t size;
+};
+
+// Every JS-representable value that crosses the JSI boundary in this module
+// should be expressed as a JSVariant and converted with to_jsi()/to_variant()
+// in utils.hpp — see the comment there for why. Add a new alternative here
+// (and a matching branch in to_jsi/to_variant) before reaching for a
+// hand-rolled jsi::Value conversion somewhere else in the codebase.
+using JSVariant = std::variant<std::nullptr_t, bool, int, long long, double,
+                                std::string, ArrayBuffer>;
+
+} // namespace __NAMESPACE__

@@ -1,0 +1,13 @@
+import { TurboModuleRegistry, type TurboModule } from 'react-native';
+
+// This is intentionally tiny. The only thing that crosses the codegen'd
+// TurboModule boundary is a blocking-synchronous install() call that hands
+// the JSI Runtime + CallInvoker to hand-written C++ (see
+// cpp/__PREFIX__Module.cpp). Every real method lives on the JSI HostObjects
+// installed onto `global.__GLOBAL_PROXY__`, not here — don't add methods to
+// this spec for new functionality, add them to a HostObject instead.
+export interface Spec extends TurboModule {
+  install(): boolean;
+}
+
+export default TurboModuleRegistry.getEnforcing<Spec>('__PREFIX__');

@@ -1,0 +1,30 @@
+project(__POD_NAME__)
+cmake_minimum_required(VERSION 3.9.0)
+
+set (PACKAGE_NAME "__POD_NAME__")
+
+include_directories(
+  ../cpp
+)
+
+add_library(
+  ${PACKAGE_NAME}
+  SHARED
+  ../cpp/__PREFIX__Module.cpp
+  ../cpp/__PREFIX__ThreadPool.cpp
+  ../cpp/ExampleHostObject.cpp
+  ../cpp/utils.cpp
+  cpp-adapter.cpp
+)
+
+find_package(ReactAndroid REQUIRED CONFIG)
+find_package(fbjni REQUIRED CONFIG)
+find_library(LOG_LIB log)
+
+target_link_libraries(
+  ${PACKAGE_NAME}
+  ${LOG_LIB}
+  ReactAndroid::reactnative
+  ReactAndroid::jsi
+  fbjni::fbjni
+)

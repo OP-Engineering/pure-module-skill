@@ -1,0 +1,34 @@
+#pragma once
+
+#include <ReactCommon/CallInvoker.h>
+#include <jsi/jsi.h>
+#include <jsi/jsilib.h>
+#include <memory>
+#include <string>
+
+namespace __NAMESPACE__ {
+
+namespace jsi = facebook::jsi;
+namespace react = facebook::react;
+
+// Set once in install() and read by every HostObject/promisify() call, same
+// as op-sqlite's opsqlite::invoker / opsqlite::invalidated globals. `invoker`
+// is how background threads hop back onto the JS thread; `invalidated` lets
+// in-flight background work bail out early once the JS runtime is going
+// away (app reload, etc).
+extern std::shared_ptr<react::CallInvoker> invoker;
+extern bool invalidated;
+
+// Called once from the platform bridge (ios/__PREFIX__.mm or
+// android/cpp-adapter.cpp) after the TurboModule's blocking-synchronous
+// install() JS call. Sets up the __NAMESPACE__::invoker/invalidated globals
+// and installs the __GLOBAL_PROXY__ object that src/index.ts reads.
+void install(jsi::Runtime &rt,
+             const std::shared_ptr<react::CallInvoker> &invoker,
+             const char *base_path);
+
+// Called on JS context teardown (reload, CodePush, ...). Tells any live
+// HostObjects to stop background work and drops our references to them.
+void invalidate();
+
+} // namespace __NAMESPACE__

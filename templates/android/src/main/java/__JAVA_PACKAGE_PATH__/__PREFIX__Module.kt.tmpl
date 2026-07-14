@@ -1,0 +1,36 @@
+package __JAVA_PACKAGE__
+
+import android.util.Log
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+
+internal class __PREFIX__Module(context: ReactApplicationContext?) : ReactContextBaseJavaModule(context) {
+    override fun getName(): String {
+        return NAME
+    }
+
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    fun install(): Boolean {
+        return try {
+            __PREFIX__Bridge.instance.install(reactApplicationContext)
+            true
+        } catch (exception: Exception) {
+            Log.e(NAME, "Install exception: $exception")
+            false
+        }
+    }
+
+    override fun invalidate() {
+        super.invalidate()
+        __PREFIX__Bridge.instance.invalidate()
+    }
+
+    companion object {
+        init {
+            System.loadLibrary("__POD_NAME__")
+        }
+
+        const val NAME = "__PREFIX__"
+    }
+}

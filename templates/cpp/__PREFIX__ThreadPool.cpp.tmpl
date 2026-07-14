@@ -1,0 +1,74 @@
+#include "__PREFIX__ThreadPool.hpp"
+
+namespace __NAMESPACE__ {
+
+ThreadPool::ThreadPool() : done(false) {
+  auto numberOfThreads = std::thread::hardware_concurrency();
+  if (numberOfThreads == 0) {
+    numberOfThreads = 1;
+  }
+
+  for (unsigned i = 0; i < numberOfThreads; ++i) {
+    threads.emplace_back(&ThreadPool::doWork, this);
+  }
+}
+
+// Joins all threads so the program (or HostObject holding this pool) can be
+// torn down gracefully.
+ThreadPool::~ThreadPool() {
+  done = true;
+
+  workQueueConditionVariable.notify_all();
+
+  for (auto &thread : threads) {
+    if (thread.joinable()) {
+      thread.join();
+    }
+  }
+
+  threads.clear();
+}
+
+void ThreadPool::queueWork(const std::function<void(void)> &task) {
+  std::lock_guard<std::mutex> g(workQueueMutex);
+
+  workQueue.push(task);
+
+  workQueueConditionVariable.notify_one();
+}
+
+void ThreadPool::doWork() {
+  while (!done) {
+    std::function<void(void)> task;
+
+    // Scoped so the queue isn't locked longer than necessary.
+    {
+      std::unique_lock<std::mutex> g(workQueueMutex);
+      workQueueConditionVariable.wait(g, [&] {
+        return !workQueue.empty() || done;
+      });
+
+      if (done) {
+        break;
+      }
+
+      task = workQueue.front();
+      workQueue.pop();
+      ++busy;
+    }
+    task();
+    {
+      std::lock_guard<std::mutex> g(workQueueMutex);
+      --busy;
+    }
+    workQueueConditionVariable.notify_one();
+  }
+}
+
+void ThreadPool::waitFinished() {
+  std::unique_lock<std::mutex> g(workQueueMutex);
+  workQueueConditionVariable.wait(
+      g, [&] { return workQueue.empty() && (busy == 0); });
+}
+
+} // namespace __NAMESPACE__

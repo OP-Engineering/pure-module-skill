@@ -1,0 +1,9 @@
+#pragma once
+
+// Do not unroll into multi lines to avoid Xcode reporting the wrong lines.
+// Prefixed with __PREFIX_UPPER__ so this doesn't collide with another
+// native module's own HFN-style macros if both end up in the same TU.
+#define __PREFIX_UPPER___HFN0 jsi::Function::createFromHostFunction(rt, jsi::PropNameID::forAscii(rt, ""), 0, [](jsi::Runtime &rt, const jsi::Value &that, const jsi::Value *args, size_t count) -> jsi::Value
+#define __PREFIX_UPPER___HFN(c1) jsi::Function::createFromHostFunction(rt, jsi::PropNameID::forAscii(rt, ""), 0, [c1](jsi::Runtime &rt, const jsi::Value &that, const jsi::Value *args, size_t count) -> jsi::Value
+#define __PREFIX_UPPER___HFN2(c1, c2) jsi::Function::createFromHostFunction(rt, jsi::PropNameID::forAscii(rt, ""), 0, [c1, c2](jsi::Runtime &rt, const jsi::Value &that, const jsi::Value *args, size_t count) -> jsi::Value
+#define __PREFIX_UPPER___HFN3(c1, c2, c3) jsi::Function::createFromHostFunction(rt, jsi::PropNameID::forAscii(rt, ""), 0, [c1, c2, c3](jsi::Runtime &rt, const jsi::Value &that, const jsi::Value *args, size_t count) -> jsi::Value

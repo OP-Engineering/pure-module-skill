@@ -1,0 +1,50 @@
+#pragma once
+
+#include "__PREFIX__ThreadPool.hpp"
+#include <jsi/jsi.h>
+#include <memory>
+#include <unordered_map>
+
+namespace __NAMESPACE__ {
+
+namespace jsi = facebook::jsi;
+
+// Template HostObject: copy this file (rename it) for every real piece of
+// functionality you add. It shows three patterns used throughout this
+// module:
+//
+//  - `add`: a synchronous JSI HostFunction built with the __PREFIX_UPPER___HFN
+//    macro, returning a value directly.
+//  - `computeAsync`: an async JSI HostFunction that offloads work to this
+//    object's own ThreadPool and returns a Promise via promisify().
+//  - `labelItems`: a synchronous HostFunction that converts a JS array to
+//    C++ with to_string_vec(), builds JSVariant rows, and returns a JS array
+//    of objects via create_object_array() — the helpers in utils.hpp to use
+//    for JSI <-> C++ conversion instead of hand-rolled jsi::Value code, and
+//    the jsi::PropNameID-caching pattern to copy whenever you're setting the
+//    same property names on many objects.
+//
+// Each HostObject instance owns its own ThreadPool so that invalidate() can
+// drain exactly this object's in-flight work without needing a shared,
+// globally-locked pool.
+class JSI_EXPORT ExampleHostObject : public jsi::HostObject {
+public:
+  explicit ExampleHostObject(jsi::Runtime &rt);
+
+  std::vector<jsi::PropNameID> getPropertyNames(jsi::Runtime &rt) override;
+  jsi::Value get(jsi::Runtime &rt, const jsi::PropNameID &propNameID) override;
+  void set(jsi::Runtime &rt, const jsi::PropNameID &name,
+           const jsi::Value &value) override;
+
+  void invalidate();
+  ~ExampleHostObject() override;
+
+private:
+  void create_jsi_functions(jsi::Runtime &rt);
+
+  std::unordered_map<std::string, jsi::Value> function_map;
+  std::shared_ptr<ThreadPool> thread_pool;
+  bool invalidated = false;
+};
+
+} // namespace __NAMESPACE__

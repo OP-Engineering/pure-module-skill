@@ -1,0 +1,52 @@
+#include "__PREFIX__Module.hpp"
+#include "ExampleHostObject.hpp"
+#include "logs.h"
+#include "macros.hpp"
+#include <vector>
+
+namespace __NAMESPACE__ {
+
+namespace jsi = facebook::jsi;
+namespace react = facebook::react;
+
+std::string _base_path;
+std::vector<std::shared_ptr<ExampleHostObject>> examples;
+bool invalidated = false;
+std::shared_ptr<react::CallInvoker> invoker;
+
+// React Native calls this on JS context invalidation (reload, CodePush,
+// ...). Tell every live HostObject to stop background work, then drop our
+// references so they can be garbage collected.
+void invalidate() {
+  invalidated = true;
+
+  for (const auto &example : examples) {
+    example->invalidate();
+  }
+
+  examples.clear();
+}
+
+void install(jsi::Runtime &rt,
+             const std::shared_ptr<react::CallInvoker> &_invoker,
+             const char *base_path) {
+  _base_path = std::string(base_path);
+  __NAMESPACE__::invoker = _invoker;
+  __NAMESPACE__::invalidated = false;
+
+  auto createExample = __PREFIX_UPPER___HFN0 {
+    std::shared_ptr<ExampleHostObject> example =
+        std::make_shared<ExampleHostObject>(rt);
+    examples.emplace_back(example);
+    return jsi::Object::createFromHostObject(rt, example);
+  });
+
+  jsi::Object module = jsi::Object(rt);
+  module.setProperty(rt, "createExample", std::move(createExample));
+
+  rt.global().setProperty(rt, "__GLOBAL_PROXY__", std::move(module));
+
+  LOGI("[__PREFIX_LOWER__] installed, base path: %s", base_path);
+}
+
+} // namespace __NAMESPACE__

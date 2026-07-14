@@ -1,0 +1,46 @@
+#pragma once
+
+#include <condition_variable>
+#include <exception>
+#include <functional>
+#include <mutex>
+#include <queue>
+#include <stdio.h>
+#include <thread>
+#include <vector>
+
+namespace __NAMESPACE__ {
+
+// One instance of this is typically owned per-HostObject, mirroring how
+// op-sqlite gives every DBHostObject its own ThreadPool: it keeps async work
+// for one JS-visible object serialized and easy to drain on invalidate(),
+// without a global pool shared (and contended) across unrelated objects.
+class ThreadPool {
+public:
+  ThreadPool();
+  ~ThreadPool();
+  void queueWork(const std::function<void(void)> &task);
+  void waitFinished();
+
+private:
+  unsigned int busy{};
+  // Threads wait on this until there is work to do.
+  std::condition_variable_any workQueueConditionVariable;
+
+  // Stored in a vector so they can be joined gracefully on shutdown.
+  std::vector<std::thread> threads;
+
+  // Protects workQueue.
+  std::mutex workQueueMutex;
+
+  // Queue of work waiting to be processed.
+  std::queue<std::function<void(void)>> workQueue;
+
+  // Set to true when the pool is shutting down, so worker loops stop.
+  bool done;
+
+  // Loop run by each worker thread to pull work off the queue.
+  void doWork();
+};
+
+} // namespace __NAMESPACE__

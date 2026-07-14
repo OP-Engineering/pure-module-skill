@@ -1,0 +1,63 @@
+#pragma once
+
+#include "__PREFIX__ThreadPool.hpp"
+#include "types.hpp"
+#include <any>
+#include <functional>
+#include <jsi/jsi.h>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace __NAMESPACE__ {
+
+namespace jsi = facebook::jsi;
+
+// --- JSI <-> C++ conversion ------------------------------------------------
+//
+// Use these for every JSI <-> C++ conversion instead of hand-rolling
+// jsi::Value reads/writes at each call site. Centralizing the conversion
+// means a new JSVariant alternative (see types.hpp) only needs to be taught
+// to these two functions once, instead of at every HostFunction that touches
+// it.
+
+jsi::Value to_jsi(jsi::Runtime &rt, const JSVariant &value);
+
+JSVariant to_variant(jsi::Runtime &rt, const jsi::Value &value);
+
+std::vector<std::string> to_string_vec(jsi::Runtime &rt, const jsi::Value &xs);
+
+std::vector<int> to_int_vec(jsi::Runtime &rt, const jsi::Value &xs);
+
+std::vector<JSVariant> to_variant_vec(jsi::Runtime &rt, const jsi::Value &xs);
+
+// Builds a JS array of plain objects: one object per entry in `rows`, using
+// `column_names[j]` as the key for `rows[i][j]`.
+//
+// The column names are identical across every row, so their jsi::PropNameIDs
+// are created once before the loop and reused for every row's setProperty()
+// call, instead of re-interning the same property name string once per cell.
+// jsi::PropNameID::forUtf8/forAscii is not free — with a few thousand rows
+// this caching is a measurable win, not a marginal one. Reuse this same
+// "build the PropNameID cache once, outside the loop" pattern any time
+// you're about to set the same set of property names on many objects.
+jsi::Value
+create_object_array(jsi::Runtime &rt,
+                    const std::vector<std::string> &column_names,
+                    const std::vector<std::vector<JSVariant>> &rows);
+
+// Wraps the "run on a background thread, resolve/reject back on the JS
+// thread" pattern behind a jsi::Promise. `lambda` runs on `thread_pool` and
+// must not touch the jsi::Runtime (it's not thread-safe); its return value
+// (type-erased via std::any) is handed to `resolve_callback`, which DOES run
+// back on the JS thread and can safely build jsi::Values from it.
+//
+// This is the same shape as op-sqlite's promisify() — copy it verbatim into
+// any new async HostFunction rather than hand-rolling Promise executors.
+jsi::Value
+promisify(jsi::Runtime &rt, std::shared_ptr<ThreadPool> thread_pool,
+          std::function<std::any()> lambda,
+          std::function<jsi::Value(jsi::Runtime &rt, std::any result)>
+              resolve_callback);
+
+} // namespace __NAMESPACE__

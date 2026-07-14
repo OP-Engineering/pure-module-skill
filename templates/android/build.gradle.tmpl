@@ -1,0 +1,117 @@
+buildscript {
+  ext.getExtOrDefault = { name ->
+    return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties['__PREFIX___' + name]
+  }
+
+  repositories {
+    google()
+    mavenCentral()
+  }
+
+  dependencies {
+    classpath("com.android.tools.build:gradle:8.7.2")
+    // noinspection DifferentKotlinGradleVersion
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
+  }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+apply plugin: "com.facebook.react"
+
+def getExtOrIntegerDefault(name) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["__PREFIX___" + name]).toInteger()
+}
+
+def reactNativeArchitectures() {
+  def value = project.getProperties().get("reactNativeArchitectures")
+  return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+}
+
+android {
+  namespace "__JAVA_PACKAGE__"
+
+  compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
+
+  defaultConfig {
+    minSdkVersion getExtOrIntegerDefault("minSdkVersion")
+    targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+
+    externalNativeBuild {
+      cmake {
+        cppFlags "-O2 -frtti -fexceptions -Wall -fstack-protector-all"
+        abiFilters(*reactNativeArchitectures())
+        arguments "-DANDROID_STL=c++_shared"
+      }
+    }
+
+    packagingOptions {
+      excludes = [
+        "META-INF",
+        "META-INF/**",
+        "**/libjsi.so",
+        "**/libreact_nativemodule_core.so",
+        "**/libturbomodulejsijni.so",
+        "**/libc++_shared.so",
+        "**/libfbjni.so",
+        "**/libreactnative.so",
+      ]
+    }
+  }
+
+  buildFeatures {
+    buildConfig true
+    prefab true
+    prefabPublishing true
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
+    }
+  }
+
+  prefab {
+    "__POD_NAME__" {
+      headers "${project.buildDir}/headers/__POD_NAME__/"
+    }
+  }
+
+  lintOptions {
+    disable "GradleCompatible"
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "CMakeLists.txt"
+    }
+  }
+}
+
+repositories {
+  mavenCentral()
+  google()
+}
+
+def kotlin_version = getExtOrDefault("kotlinVersion")
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+}
+
+// Codegen/prefab need the C++ headers copied under a stable path before the
+// native build runs — same trick op-sqlite uses.
+tasks.register('prepareHeaders', Copy) {
+  from('../cpp')
+  include "**/*.h", "**/*.hpp"
+  into "${project.buildDir}/headers/__POD_NAME__/__JAVA_PACKAGE__/"
+  includeEmptyDirs = false
+}
+
+preBuild.dependsOn(prepareHeaders)

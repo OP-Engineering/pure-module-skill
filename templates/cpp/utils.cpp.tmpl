@@ -1,0 +1,236 @@
+#include "utils.hpp"
+#include "__PREFIX__Module.hpp"
+#include "macros.hpp"
+#include <cstring>
+
+namespace __NAMESPACE__ {
+
+jsi::Value to_jsi(jsi::Runtime &rt, const JSVariant &value) {
+  if (std::holds_alternative<std::nullptr_t>(value)) {
+    return jsi::Value::null();
+  } else if (std::holds_alternative<bool>(value)) {
+    return jsi::Value(std::get<bool>(value));
+  } else if (std::holds_alternative<int>(value)) {
+    return jsi::Value(std::get<int>(value));
+  } else if (std::holds_alternative<long long>(value)) {
+    // JSI has no 64-bit integer type; round-trip through double like every
+    // other JS number. Values outside +/-2^53 will lose precision, same as
+    // any other JS number.
+    return jsi::Value(static_cast<double>(std::get<long long>(value)));
+  } else if (std::holds_alternative<double>(value)) {
+    return jsi::Value(std::get<double>(value));
+  } else if (std::holds_alternative<std::string>(value)) {
+    return jsi::String::createFromUtf8(rt, std::get<std::string>(value));
+  } else if (std::holds_alternative<ArrayBuffer>(value)) {
+    auto jsBuffer = std::get<ArrayBuffer>(value);
+    jsi::Function array_buffer_ctor =
+        rt.global().getPropertyAsFunction(rt, "ArrayBuffer");
+    jsi::Object o =
+        array_buffer_ctor.callAsConstructor(rt, static_cast<int>(jsBuffer.size))
+            .getObject(rt);
+    jsi::ArrayBuffer buf = o.getArrayBuffer(rt);
+    memcpy(buf.data(rt), jsBuffer.data.get(), jsBuffer.size);
+    return o;
+  }
+
+  return jsi::Value::null();
+}
+
+JSVariant to_variant(jsi::Runtime &rt, const jsi::Value &value) {
+  if (value.isNull() || value.isUndefined()) {
+    return JSVariant(nullptr);
+  } else if (value.isBool()) {
+    return JSVariant(value.getBool());
+  } else if (value.isNumber()) {
+    double doubleVal = value.asNumber();
+    int intVal = static_cast<int>(doubleVal);
+    long long longVal = static_cast<long long>(doubleVal);
+    if (intVal == doubleVal) {
+      return JSVariant(intVal);
+    } else if (longVal == doubleVal) {
+      return JSVariant(longVal);
+    } else {
+      return JSVariant(doubleVal);
+    }
+  } else if (value.isString()) {
+    return JSVariant(value.asString(rt).utf8(rt));
+  } else if (value.isObject()) {
+    auto obj = value.asObject(rt);
+    size_t byteOffset = 0;
+    size_t byteLength = 0;
+    uint8_t *sourceData = nullptr;
+    jsi::Function arrayBufferCtor =
+        rt.global().getPropertyAsFunction(rt, "ArrayBuffer");
+    jsi::Function isViewFn =
+        arrayBufferCtor.getPropertyAsFunction(rt, "isView");
+    bool isArrayBufferView = isViewFn.call(rt, obj).getBool();
+
+    if (obj.isArrayBuffer(rt)) {
+      auto buffer = obj.getArrayBuffer(rt);
+      sourceData = buffer.data(rt);
+      byteLength = buffer.size(rt);
+    } else if (isArrayBufferView) {
+      jsi::Object bufferObject = obj.getPropertyAsObject(rt, "buffer");
+      auto buffer = bufferObject.getArrayBuffer(rt);
+
+      byteOffset =
+          static_cast<size_t>(obj.getProperty(rt, "byteOffset").asNumber());
+      byteLength =
+          static_cast<size_t>(obj.getProperty(rt, "byteLength").asNumber());
+
+      const size_t bufferSize = buffer.size(rt);
+      if (byteOffset > bufferSize || byteLength > bufferSize - byteOffset) {
+        throw std::runtime_error("Invalid ArrayBuffer view range");
+      }
+
+      sourceData = buffer.data(rt) + byteOffset;
+    } else {
+      throw std::runtime_error(
+          "[__PREFIX_LOWER__] object is not convertible to JSVariant: only "
+          "primitives, strings and ArrayBuffers/ArrayBuffer views are "
+          "supported. Add a JSVariant alternative (types.hpp) and a branch "
+          "here if you need to accept another shape.");
+    }
+
+    uint8_t *data = new uint8_t[byteLength];
+    memcpy(data, sourceData, byteLength);
+
+    return JSVariant(ArrayBuffer{.data = std::shared_ptr<uint8_t[]>{data},
+                                 .size = byteLength});
+  }
+
+  throw std::runtime_error(
+      "[__PREFIX_LOWER__] cannot convert JSI value to JSVariant");
+}
+
+std::vector<std::string> to_string_vec(jsi::Runtime &rt, const jsi::Value &xs) {
+  jsi::Array const values = xs.asObject(rt).asArray(rt);
+  std::vector<std::string> res;
+  size_t length = values.length(rt);
+  res.reserve(length);
+  for (size_t i = 0; i < length; i++) {
+    res.emplace_back(values.getValueAtIndex(rt, i).asString(rt).utf8(rt));
+  }
+  return res;
+}
+
+std::vector<int> to_int_vec(jsi::Runtime &rt, const jsi::Value &xs) {
+  jsi::Array const values = xs.asObject(rt).asArray(rt);
+  std::vector<int> res;
+  size_t length = values.length(rt);
+  res.reserve(length);
+  for (size_t i = 0; i < length; i++) {
+    res.emplace_back(
+        static_cast<int>(values.getValueAtIndex(rt, i).asNumber()));
+  }
+  return res;
+}
+
+std::vector<JSVariant> to_variant_vec(jsi::Runtime &rt, const jsi::Value &xs) {
+  jsi::Array const values = xs.asObject(rt).asArray(rt);
+  size_t length = values.length(rt);
+
+  std::vector<JSVariant> res;
+  res.reserve(length);
+
+  for (size_t i = 0; i < length; i++) {
+    res.emplace_back(to_variant(rt, values.getValueAtIndex(rt, i)));
+  }
+
+  return res;
+}
+
+jsi::Value
+create_object_array(jsi::Runtime &rt,
+                    const std::vector<std::string> &column_names,
+                    const std::vector<std::vector<JSVariant>> &rows) {
+  size_t column_count = column_names.size();
+  size_t row_count = rows.size();
+
+  jsi::Array result = jsi::Array(rt, row_count);
+  if (row_count == 0) {
+    return result;
+  }
+
+  // Built once, outside the row loop — see the comment on this function in
+  // utils.hpp for why that matters.
+  std::vector<jsi::PropNameID> column_prop_ids;
+  column_prop_ids.reserve(column_count);
+  for (const auto &column_name : column_names) {
+    column_prop_ids.emplace_back(jsi::PropNameID::forUtf8(rt, column_name));
+  }
+
+  for (size_t i = 0; i < row_count; i++) {
+    jsi::Object row(rt);
+    for (size_t j = 0; j < column_count; j++) {
+      row.setProperty(rt, column_prop_ids[j], to_jsi(rt, rows[i][j]));
+    }
+    result.setValueAtIndex(rt, i, std::move(row));
+  }
+
+  return result;
+}
+
+jsi::Value
+promisify(jsi::Runtime &rt, std::shared_ptr<ThreadPool> thread_pool,
+          std::function<std::any()> lambda,
+          std::function<jsi::Value(jsi::Runtime &rt, std::any result)>
+              resolve_callback) {
+  auto promise_constructor = rt.global().getPropertyAsFunction(rt, "Promise");
+
+  auto executor =
+      __PREFIX_UPPER___HFN3(lambda = std::move(lambda),
+           resolve_callback = std::move(resolve_callback), thread_pool) {
+    auto resolve = std::make_shared<jsi::Value>(rt, args[0]);
+    auto reject = std::make_shared<jsi::Value>(rt, args[1]);
+
+    auto task = [lambda = lambda, thread_pool,
+                 resolve_callback = resolve_callback,
+                 resolve = std::move(resolve), reject = std::move(reject)]() {
+      try {
+        std::any result = lambda();
+
+        if (__NAMESPACE__::invalidated) {
+          return;
+        }
+
+        __NAMESPACE__::invoker->invokeAsync(
+            [result = std::move(result), resolve = resolve,
+             resolve_callback = resolve_callback](jsi::Runtime &rt) {
+              auto jsi_result = resolve_callback(rt, result);
+              resolve->asObject(rt).asFunction(rt).call(rt, jsi_result);
+            });
+      } catch (std::runtime_error &e) {
+        // React Native on Android does not reliably match runtime_error
+        // against the generic exception handler below, so it needs its own
+        // catch clause. https://github.com/facebook/react-native/issues/48027
+        auto what = e.what();
+        __NAMESPACE__::invoker->invokeAsync(
+            [what = std::string(what), reject = reject](jsi::Runtime &rt) {
+              auto errorCtr = rt.global().getPropertyAsFunction(rt, "Error");
+              auto error = errorCtr.callAsConstructor(
+                  rt, jsi::String::createFromAscii(rt, what));
+              reject->asObject(rt).asFunction(rt).call(rt, error);
+            });
+      } catch (std::exception &exc) {
+        auto what = exc.what();
+        __NAMESPACE__::invoker->invokeAsync(
+            [what = std::string(what), reject = reject](jsi::Runtime &rt) {
+              auto errorCtr = rt.global().getPropertyAsFunction(rt, "Error");
+              auto error = errorCtr.callAsConstructor(
+                  rt, jsi::String::createFromAscii(rt, what));
+              reject->asObject(rt).asFunction(rt).call(rt, error);
+            });
+      }
+    };
+
+    thread_pool->queueWork(task);
+
+    return jsi::Value(nullptr);
+  });
+
+  auto promise = promise_constructor.callAsConstructor(rt, executor);
+  return promise;
+}
+
+} // namespace __NAMESPACE__
