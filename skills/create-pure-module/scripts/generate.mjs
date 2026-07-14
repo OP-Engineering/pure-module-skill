@@ -120,7 +120,7 @@ function detectBuilderBobProject(dir) {
 // Removes leftover files from the library's default example TurboModule
 // (e.g. create-react-native-library's "Multiply" boilerplate) that this
 // skill's entry point supersedes but doesn't share a filename with.
-function cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath }) {
+function cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath, name, podName }) {
   const removed = [];
 
   const removeIfNotIn = (dir, keepNames) => {
@@ -181,6 +181,25 @@ function cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath
   if (fs.existsSync(staleConfigPath)) {
     fs.rmSync(staleConfigPath);
     removed.push(path.relative(outDir, staleConfigPath));
+  }
+
+  // create-react-native-library also scaffolds a root "${ProjectName}.podspec"
+  // (e.g. "Purelib.podspec" for "react-native-purelib"), named from a
+  // PascalCased project name derived from the npm package name — distinct
+  // from this skill's own "__POD_NAME__.podspec.tmpl" output, which uses the
+  // actual pod/library name (e.g. "react-native-purelib.podspec") to match
+  // what build.gradle's prefab block and the podspec's own s.name expect.
+  // Leaving both in place confuses `pod install`.
+  if (name && podName) {
+    const project = name.replace(/^(react-native-|@[^/]+\/)/, "");
+    const staleProjectName = `${project.charAt(0).toUpperCase()}${project
+      .replace(/[^a-z0-9](\w)/gi, (_, c) => c.toUpperCase())
+      .slice(1)}`;
+    const stalePodspecPath = path.join(outDir, `${staleProjectName}.podspec`);
+    if (staleProjectName !== podName && fs.existsSync(stalePodspecPath)) {
+      fs.rmSync(stalePodspecPath);
+      removed.push(path.relative(outDir, stalePodspecPath));
+    }
   }
 
   return removed;
@@ -263,7 +282,7 @@ async function main() {
     written.push(path.relative(outDir, destFile));
   }
 
-  const removed = cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath });
+  const removed = cleanupStaleFiles(outDir, { prefix, javaPackagePath, oldJavaPackagePath, name, podName });
 
   const pkgPath = path.join(outDir, "package.json");
   if (fs.existsSync(pkgPath)) {
